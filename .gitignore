@@ -1,0 +1,12 @@
+# Runtime / generated
+.usage_state.json
+notify.log
+launchd_stdout.log
+launchd_stderr.log
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
