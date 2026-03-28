@@ -5,7 +5,8 @@ LABEL="com.cursor.usage-notify"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT_PATH="$SCRIPT_DIR/cursor_usage_notify.py"
 PLIST_DST="$HOME/Library/LaunchAgents/${LABEL}.plist"
-POLL_INTERVAL="${CURSOR_NOTIFY_INTERVAL:-120}"
+POLL_INTERVAL="${CURSOR_NOTIFY_INTERVAL:-15}"
+SUMMARY_EVERY="${CURSOR_SUMMARY_EVERY:-40}"
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -93,6 +94,8 @@ cat > "$PLIST_DST" <<PLIST
     <dict>
         <key>CURSOR_NOTIFY_INTERVAL</key>
         <string>${POLL_INTERVAL}</string>
+        <key>CURSOR_SUMMARY_EVERY</key>
+        <string>${SUMMARY_EVERY}</string>
     </dict>
 </dict>
 </plist>
@@ -107,7 +110,8 @@ launchctl load "$PLIST_DST"
 echo ""
 green "✓ Cursor Usage Notifier is running!"
 echo ""
-echo "  Poll interval : every ${POLL_INTERVAL}s  (set CURSOR_NOTIFY_INTERVAL before running setup to change)"
+echo "  Poll interval : every ${POLL_INTERVAL}s  (set CURSOR_NOTIFY_INTERVAL before setup to change)"
+echo "  Summary every : ${SUMMARY_EVERY} polls (~$((POLL_INTERVAL * SUMMARY_EVERY / 60)) min)"
 echo "  Logs          : $SCRIPT_DIR/notify.log"
 echo "  LaunchAgent   : $PLIST_DST"
 echo ""

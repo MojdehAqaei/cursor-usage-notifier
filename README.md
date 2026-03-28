@@ -1,16 +1,17 @@
 # Cursor Usage Notifier
 
-Get native macOS notifications every time your Cursor AI token usage changes.
+Get a native macOS notification **after every Cursor AI request** showing the model, token count, and cost.
 
-Monitors plan requests, on-demand spend, quota warnings, and billing cycle resets — all running silently in the background.
+Also sends periodic usage summaries with plan quota and on-demand spend.
 
 ## What You Get
 
-- **Real-time usage deltas** — "Plan +3 → 142/500 (28.4%)"
-- **On-demand cost tracking** — "On-demand +$0.45 → $2.30"
-- **Quota warnings** — alerts at 90% and when the plan is fully exhausted
-- **Billing cycle resets** — notifies you when a new cycle starts
-- **Auto-recovery** — re-reads credentials if the token rotates, retries on transient failures
+**Per-request notifications:**
+- `chat  sonnet-3.7 · 12.4K tok (8.1K in / 4.3K out) · $0.0234`
+- `agent_edit  gpt-4o · 3.2K tok (2.1K in / 1.1K out) · $0.0089`
+
+**Periodic summaries (every ~10 min by default):**
+- `Plan: 142/500 (28.4%) · On-demand: $2.30`
 
 ## Prerequisites
 
@@ -57,14 +58,19 @@ That's it. The setup script will:
 3. Generate a LaunchAgent plist with correct paths for *this* machine
 4. Register it with `launchctl` so it starts now and on every login
 
-You should see a macOS notification within ~2 minutes with your current usage snapshot.
+You'll get a notification after your next Cursor request.
 
-### 3. (Optional) Change the polling interval
+### 3. (Optional) Tune the intervals
 
-Default is every **120 seconds**. To change it, set the environment variable before running setup:
+| Variable | Default | What it does |
+|----------|---------|-------------|
+| `CURSOR_NOTIFY_INTERVAL` | `15` | Seconds between polls for new events |
+| `CURSOR_SUMMARY_EVERY` | `40` | Number of polls between usage summaries (~10 min at default) |
+
+Set them before running setup:
 
 ```bash
-CURSOR_NOTIFY_INTERVAL=60 ./setup.sh
+CURSOR_NOTIFY_INTERVAL=10 CURSOR_SUMMARY_EVERY=60 ./setup.sh
 ```
 
 ## Managing the Service
@@ -89,18 +95,17 @@ CURSOR_NOTIFY_INTERVAL=60 ./setup.sh
                ▼
 ┌──────────────────────────────┐
 │  cursor_usage_notify.py      │
-│  (runs via launchd)          │──── polls every N sec
+│  (runs via launchd)          │──── polls every 15s
 └──────────────┬───────────────┘
-               │ GET cursor.com/api/usage-summary
+               │ POST cursor.com/api/dashboard/get-filtered-usage-events
                │ Cookie: WorkosCursorSessionToken=...
                ▼
 ┌──────────────────────────────┐
-│  Cursor API                  │
-│  → plan used / limit / %     │
-│  → on-demand spend           │
-│  → billing cycle dates       │
+│  Cursor Events API           │
+│  → per-request: model,       │
+│    in/out/cache tokens, cost │
 └──────────────┬───────────────┘
-               │ compare with .usage_state.json
+               │ new events? (compare IDs with .usage_state.json)
                ▼
         ┌──────────────┐
         │ osascript     │ ← macOS Notification Center
@@ -108,10 +113,11 @@ CURSOR_NOTIFY_INTERVAL=60 ./setup.sh
         └──────────────┘
 ```
 
-1. **Credentials** are read directly from Cursor's local SQLite database — no manual token copying.
-2. **Session token** is constructed as `userId::accessToken` and sent as the `WorkosCursorSessionToken` cookie.
-3. **Diffing** compares the current API response against the last saved state (`.usage_state.json`). Only fires a notification when something actually changes.
-4. **Notifications** use the built-in `osascript` / Notification Center — no extra apps needed.
+1. **Credentials** are read from Cursor's local SQLite database — no manual token copying.
+2. **Events API** returns individual requests with model, token breakdown (input / output / cache read / cache write), and cost in cents.
+3. **Deduplication** tracks seen event IDs in `.usage_state.json`. On first run it indexes existing events silently, then only notifies on new ones.
+4. **Summary** periodically calls `/api/usage-summary` for plan quota and on-demand totals.
+5. **Auto-recovery** re-reads credentials from the DB if the token rotates.
 
 ## Files
 
@@ -124,7 +130,7 @@ cursor-usage-notifier/
 ├── README.md                # This file
 │
 │  ── generated at runtime ──
-├── .usage_state.json        # Last-known usage (diffing baseline)
+├── .usage_state.json        # Last-seen event IDs + timestamp
 ├── notify.log               # Application log
 ├── launchd_stdout.log       # launchd stdout capture
 └── launchd_stderr.log       # launchd stderr capture
